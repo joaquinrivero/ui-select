@@ -1520,6 +1520,13 @@ describe('ui-select tests', function() {
          .toBe("Wladimir <wladimir@email.com>Samantha <samantha@email.com>Nicole <nicole@email.com>");
 
     });
+
+    it('should be marked invalid when required and empty', function() {
+      scope.selection.selectedMultiple = [];
+      var el = createUiSelectMultiple({required: true});
+      expect(el.scope().$select.ngModel.$invalid).toBe(true);
+      expect(el.scope().$select.ngModel.$error.required).toBe(true);
+    });
   });
 
   describe('default configuration via uiSelectConfig', function() {
