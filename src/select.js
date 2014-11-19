@@ -678,9 +678,9 @@
                 result = $select.parserResult.modelMapper(scope, locals);
 
                 if ($select.parserResult.trackByProp) {
-                  match = result[$select.parserResult.trackByProp] == inputValue[$select.parserResult.trackByProp];
+                  match = angular.equals(result[$select.parserResult.trackByProp], inputValue[$select.parserResult.trackByProp]);
                 } else {
-                  match = result == inputValue;
+                  match = angular.equals(result, inputValue);
                 }
 
                 if (match) {
@@ -698,10 +698,10 @@
             result = $select.parserResult.modelMapper(scope, locals);
 
             if ($select.parserResult.trackByProp) {
-              return result[$select.parserResult.trackByProp] == inputValue[$select.parserResult.trackByProp];
+              return angular.equals(result[$select.parserResult.trackByProp], inputValue[$select.parserResult.trackByProp]);
             }
 
-            return result == inputValue;
+            return angular.equals(result, inputValue);
           };
 
           var handleMultiple = function(data, inputValue) {
