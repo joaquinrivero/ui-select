@@ -124,7 +124,7 @@ describe('ui-select tests', function() {
     var $select = el.scope().$select;
     $select.open = true;
     scope.$digest();
-  };
+  }
 
 
   // Tests
@@ -171,6 +171,22 @@ describe('ui-select tests', function() {
     );
 
     expect(getMatchLabel(el)).toEqual('Samantha');
+  });
+
+  it('should not error when using track by feature and ng-model reference is set to null', function() {
+    scope.selection.selected = null;
+
+    var el = compileTemplate(
+      '<ui-select ng-model="selection.selected"> \
+        <ui-select-match placeholder="Pick one...">{{$select.selected.name}}</ui-select-match> \
+        <ui-select-choices repeat="person in people | filter: $select.search track by person.name"> \
+          <div ng-bind-html="person.name | highlight: $select.search"></div> \
+          <div ng-bind-html="person.email | highlight: $select.search"></div> \
+        </ui-select-choices> \
+      </ui-select>'
+    );
+
+    expect(getMatchLabel(el)).toEqual('');
   });
 
   it('should display the choices when activated', function() {
@@ -399,7 +415,7 @@ describe('ui-select tests', function() {
       beforeEach(function() {
         disablePerson({
           disableAttr : 'active',
-          disableBool : false,
+          disableBool : false
         });
         this.el = createUiSelect({
           disabled: '!person.active'
@@ -743,7 +759,7 @@ describe('ui-select tests', function() {
 
   });
 
-  it('should invoke hover callback', function(){
+  it('should invoke hover callback', function() {
 
     var highlighted;
     scope.onHighlightFn = function ($item) {
@@ -971,7 +987,7 @@ describe('ui-select tests', function() {
     scope.fetchFromServer = function(searching){
 
       if (searching == 's')
-        return scope.people
+        return scope.people;
 
       if (searching == 'o'){
         scope.people = []; //To simulate cases were previously selected item isnt in the list anymore
@@ -979,11 +995,11 @@ describe('ui-select tests', function() {
 
     };
 
-    setSearchText(el, 'r')
+    setSearchText(el, 'r');
     clickItem(el, 'Samantha');
     expect(getMatchLabel(el)).toBe('Samantha');
 
-    setSearchText(el, 'o')
+    setSearchText(el, 'o');
     expect(getMatchLabel(el)).toBe('Samantha');
 
   });
@@ -1227,13 +1243,13 @@ describe('ui-select tests', function() {
         var searchInput = el.find('.ui-select-search');
 
         expect(isDropdownOpened(el)).toEqual(false);
-        triggerKeydown(searchInput, Key.Left)
-        triggerKeydown(searchInput, Key.Left)
+        triggerKeydown(searchInput, Key.Left);
+        triggerKeydown(searchInput, Key.Left);
         expect(isDropdownOpened(el)).toEqual(false);
         expect(el.scope().$select.activeMatchIndex).toBe(el.scope().$select.selected.length - 2);
-        triggerKeydown(searchInput, Key.Left)
-        triggerKeydown(searchInput, Key.Left)
-        triggerKeydown(searchInput, Key.Left)
+        triggerKeydown(searchInput, Key.Left);
+        triggerKeydown(searchInput, Key.Left);
+        triggerKeydown(searchInput, Key.Left);
         expect(el.scope().$select.activeMatchIndex).toBe(0);
 
     });
@@ -1244,9 +1260,9 @@ describe('ui-select tests', function() {
         var el = createUiSelectMultiple();
         var searchInput = el.find('.ui-select-search');
 
-        el.scope().$select.activeMatchIndex = 3
-        triggerKeydown(searchInput, Key.Left)
-        triggerKeydown(searchInput, Key.Left)
+        el.scope().$select.activeMatchIndex = 3;
+        triggerKeydown(searchInput, Key.Left);
+        triggerKeydown(searchInput, Key.Left);
         expect(el.scope().$select.activeMatchIndex).toBe(1);
 
     });
@@ -1257,9 +1273,9 @@ describe('ui-select tests', function() {
         var el = createUiSelectMultiple();
         var searchInput = el.find('.ui-select-search');
 
-        el.scope().$select.activeMatchIndex = 0
-        triggerKeydown(searchInput, Key.Right)
-        triggerKeydown(searchInput, Key.Right)
+        el.scope().$select.activeMatchIndex = 0;
+        triggerKeydown(searchInput, Key.Right);
+        triggerKeydown(searchInput, Key.Right);
         expect(el.scope().$select.activeMatchIndex).toBe(2);
 
     });
@@ -1271,7 +1287,7 @@ describe('ui-select tests', function() {
         var searchInput = el.find('.ui-select-search');
 
         expect(isDropdownOpened(el)).toEqual(false);
-        triggerKeydown(searchInput, Key.Down)
+        triggerKeydown(searchInput, Key.Down);
         expect(isDropdownOpened(el)).toEqual(true);
 
     });
@@ -1306,7 +1322,7 @@ describe('ui-select tests', function() {
         var searchInput = el.find('.ui-select-search');
 
         expect(isDropdownOpened(el)).toEqual(false);
-        triggerKeydown(searchInput, Key.Down)
+        triggerKeydown(searchInput, Key.Down);
         expect(isDropdownOpened(el)).toEqual(true);
 
         clickItem(el, 'Wladimir');
@@ -1322,7 +1338,7 @@ describe('ui-select tests', function() {
         var searchInput = el.find('.ui-select-search');
 
         expect(isDropdownOpened(el)).toEqual(false);
-        triggerKeydown(searchInput, Key.Down)
+        triggerKeydown(searchInput, Key.Down);
         expect(isDropdownOpened(el)).toEqual(true);
 
         clickItem(el, 'Wladimir');
@@ -1338,9 +1354,9 @@ describe('ui-select tests', function() {
         var searchInput = el.find('.ui-select-search');
 
         expect(isDropdownOpened(el)).toEqual(false);
-        triggerKeydown(searchInput, Key.Down)
+        triggerKeydown(searchInput, Key.Down);
         expect(isDropdownOpened(el)).toEqual(true);
-        triggerKeydown(searchInput, Key.Escape)
+        triggerKeydown(searchInput, Key.Escape);
         expect(isDropdownOpened(el)).toEqual(false);
 
     });
@@ -1351,8 +1367,8 @@ describe('ui-select tests', function() {
         var el = createUiSelectMultiple();
         var searchInput = el.find('.ui-select-search');
 
-        triggerKeydown(searchInput, Key.Down)
-        triggerKeydown(searchInput, Key.Enter)
+        triggerKeydown(searchInput, Key.Down);
+        triggerKeydown(searchInput, Key.Enter);
         expect(scope.selection.selectedMultiple.length).toEqual(2);
 
     });
@@ -1364,9 +1380,9 @@ describe('ui-select tests', function() {
 
         triggerKeydown(searchInput, Key.Down); //Open dropdown
 
-        el.scope().$select.activeIndex = 0
-        triggerKeydown(searchInput, Key.Down)
-        triggerKeydown(searchInput, Key.Down)
+        el.scope().$select.activeIndex = 0;
+        triggerKeydown(searchInput, Key.Down);
+        triggerKeydown(searchInput, Key.Down);
         expect(el.scope().$select.activeIndex).toBe(2);
 
     });
@@ -1378,9 +1394,9 @@ describe('ui-select tests', function() {
 
         triggerKeydown(searchInput, Key.Down); //Open dropdown
 
-        el.scope().$select.activeIndex = 5
-        triggerKeydown(searchInput, Key.Up)
-        triggerKeydown(searchInput, Key.Up)
+        el.scope().$select.activeIndex = 5;
+        triggerKeydown(searchInput, Key.Up);
+        triggerKeydown(searchInput, Key.Up);
         expect(el.scope().$select.activeIndex).toBe(3);
 
     });
@@ -1426,7 +1442,7 @@ describe('ui-select tests', function() {
 
     });
 
-    it('should format view value correctly when using single property binding and refresh funcion', function () {
+    it('should format view value correctly when using single property binding and refresh function', function () {
 
       scope.selection.selectedMultiple = ['wladimir@email.com', 'samantha@email.com'];
 
@@ -1446,7 +1462,7 @@ describe('ui-select tests', function() {
       scope.fetchFromServer = function(searching){
 
         if (searching == 'n')
-          return scope.people
+          return scope.people;
 
         if (searching == 'o'){
           scope.people = []; //To simulate cases were previously selected item isnt in the list anymore
@@ -1454,13 +1470,13 @@ describe('ui-select tests', function() {
 
       };
 
-      setSearchText(el, 'n')
+      setSearchText(el, 'n');
       clickItem(el, 'Nicole');
 
       expect(el.find('.ui-select-match-item [uis-transclude-append]:not(.ng-hide)').text())
         .toBe("Wladimir <wladimir@email.com>Samantha <samantha@email.com>Nicole <nicole@email.com>");
 
-      setSearchText(el, 'o')
+      setSearchText(el, 'o');
 
       expect(el.find('.ui-select-match-item [uis-transclude-append]:not(.ng-hide)').text())
         .toBe("Wladimir <wladimir@email.com>Samantha <samantha@email.com>Nicole <nicole@email.com>");

@@ -677,7 +677,7 @@
                 locals[$select.parserResult.itemName] = options[i];
                 result = $select.parserResult.modelMapper(scope, locals);
 
-                if ($select.parserResult.trackByProp) {
+                if ($select.parserResult.trackByProp && inputValue) {
                   match = angular.equals(result[$select.parserResult.trackByProp], inputValue[$select.parserResult.trackByProp]);
                 } else {
                   match = angular.equals(result, inputValue);
@@ -697,7 +697,7 @@
             locals[$select.parserResult.itemName] = option;
             result = $select.parserResult.modelMapper(scope, locals);
 
-            if ($select.parserResult.trackByProp) {
+            if ($select.parserResult.trackByProp && inputValue) {
               return angular.equals(result[$select.parserResult.trackByProp], inputValue[$select.parserResult.trackByProp]);
             }
 
@@ -707,11 +707,11 @@
           var handleMultiple = function(data, inputValue) {
             var resultMultiple = [];
 
-            if (!inputValue) return resultMultiple; //If ngModel was undefined
-
-            for (var k = inputValue.length - 1; k >= 0; k--) {
-              if (!matchesOptionMultiple($select.selected, inputValue[k], resultMultiple)) {
-                matchesOptionMultiple(data, inputValue[k], resultMultiple);
+            if (inputValue) {
+              for (var k = inputValue.length - 1; k >= 0; k--) {
+                if (!matchesOptionMultiple($select.selected, inputValue[k], resultMultiple)) {
+                  matchesOptionMultiple(data, inputValue[k], resultMultiple);
+                }
               }
             }
 
@@ -721,14 +721,16 @@
           var handleSingle = function(data, inputValue) {
             var result = inputValue;
 
-            // If possible pass same object stored in $select.selected
-            if ($select.selected && matchesOption($select.selected, inputValue)) {
-              result = $select.selected;
-            } else {
-              for (var i = data.length - 1; i >= 0; i--) {
-                if (matchesOption(data[i], inputValue)) {
-                  result = data[i];
-                  break;
+            if (inputValue) {
+              // If possible pass same object stored in $select.selected
+              if ($select.selected && matchesOption($select.selected, inputValue)) {
+                result = $select.selected;
+              } else {
+                for (var i = data.length - 1; i >= 0; i--) {
+                  if (matchesOption(data[i], inputValue)) {
+                    result = data[i];
+                    break;
+                  }
                 }
               }
             }
