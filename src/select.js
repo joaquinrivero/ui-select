@@ -109,13 +109,22 @@
                 expression);
       }
 
-      return {
+      var result = {
         itemName: match[2], // (lhs) Left-hand side,
         source: $parse(match[3]),
         trackByExp: match[4],
         modelMapper: $parse(match[1] || match[2])
       };
 
+      if (result.trackByExp) {
+        var propMatch = result.trackByExp.match(/\S+\.(\S+)/);
+
+        if (propMatch) {
+          result.trackByProp = propMatch[1];
+        }
+      }
+
+      return result;
     };
 
     self.getGroupNgRepeatExpression = function() {
@@ -657,49 +666,91 @@
         });
 
         //From model --> view
-        ngModel.$formatters.unshift(function (inputValue) {
-          var data = $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search 
-              locals = {},
-              result;
-          if (data){
-            if ($select.multiple){
-              var resultMultiple = [];
-              var checkFnMultiple = function(list, value){
-                if (!list || !list.length) return;
-                for (var p = list.length - 1; p >= 0; p--) {
-                  locals[$select.parserResult.itemName] = list[p];
-                  result = $select.parserResult.modelMapper(scope, locals);
-                  if (result == value){
-                    resultMultiple.unshift(list[p]);
-                    return true;
-                  }
-                }
-                return false;
-              };
-              if (!inputValue) return resultMultiple; //If ngModel was undefined
-              for (var k = inputValue.length - 1; k >= 0; k--) {
-                if (!checkFnMultiple($select.selected, inputValue[k])){
-                  checkFnMultiple(data, inputValue[k]);
-                }
-              }
-              return resultMultiple;
-            }else{
-              var checkFnSingle = function(d){
-                locals[$select.parserResult.itemName] = d;
+        ngModel.$formatters.unshift(function() {
+          var matchesOptionMultiple = function(options, inputValue, resultMultiple) {
+            var locals, result;
+            var match = false;
+
+            if (options && options.length) {
+              for (var i = options.length - 1; i >= 0 && !match; i--) {
+                locals = {};
+                locals[$select.parserResult.itemName] = options[i];
                 result = $select.parserResult.modelMapper(scope, locals);
-                return result == inputValue;
-              };
-              //If possible pass same object stored in $select.selected
-              if ($select.selected && checkFnSingle($select.selected)) {
-                return $select.selected;
-              }
-              for (var i = data.length - 1; i >= 0; i--) {
-                if (checkFnSingle(data[i])) return data[i];
+
+                if ($select.parserResult.trackByProp) {
+                  match = result[$select.parserResult.trackByProp] == inputValue[$select.parserResult.trackByProp];
+                } else {
+                  match = result == inputValue;
+                }
+
+                if (match) {
+                  resultMultiple.unshift(options[i]);
+                }
               }
             }
-          }
-          return inputValue;
-        });
+
+            return match;
+          };
+
+          var matchesOption = function(option, inputValue) {
+            var result, locals = {};
+            locals[$select.parserResult.itemName] = option;
+            result = $select.parserResult.modelMapper(scope, locals);
+
+            if ($select.parserResult.trackByProp) {
+              return result[$select.parserResult.trackByProp] == inputValue[$select.parserResult.trackByProp];
+            }
+
+            return result == inputValue;
+          };
+
+          var handleMultiple = function(data, inputValue) {
+            var resultMultiple = [];
+
+            if (!inputValue) return resultMultiple; //If ngModel was undefined
+
+            for (var k = inputValue.length - 1; k >= 0; k--) {
+              if (!matchesOptionMultiple($select.selected, inputValue[k], resultMultiple)) {
+                matchesOptionMultiple(data, inputValue[k], resultMultiple);
+              }
+            }
+
+            return resultMultiple;
+          };
+
+          var handleSingle = function(data, inputValue) {
+            var result = inputValue;
+
+            // If possible pass same object stored in $select.selected
+            if ($select.selected && matchesOption($select.selected, inputValue)) {
+              result = $select.selected;
+            } else {
+              for (var i = data.length - 1; i >= 0; i--) {
+                if (matchesOption(data[i], inputValue)) {
+                  result = data[i];
+                  break;
+                }
+              }
+            }
+
+            return result;
+          };
+
+          return function(inputValue) {
+            var data = $select.parserResult.source(scope, {$select: {search: ''}}); //Overwrite $search
+            var result = inputValue;
+
+            if (data) {
+              if ($select.multiple) {
+                result = handleMultiple(data, inputValue);
+              } else {
+                result = handleSingle(data, inputValue);
+              }
+            }
+
+            return result;
+          };
+        }());
 
         //Set reference to ngModel from uiSelectCtrl
         $select.ngModel = ngModel;
