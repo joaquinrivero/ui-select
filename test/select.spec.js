@@ -157,6 +157,22 @@ describe('ui-select tests', function() {
     expect(getMatchLabel(el)).toEqual('Adam');
   });
 
+  it('should correctly render initial state with track by feature', function() {
+    scope.selection.selected =  { name: 'Samantha',  email: 'something different than array source',  group: 'foobar', age: 31 };
+
+    var el = compileTemplate(
+      '<ui-select ng-model="selection.selected"> \
+        <ui-select-match placeholder="Pick one...">{{$select.selected.name}}</ui-select-match> \
+        <ui-select-choices repeat="person in people | filter: $select.search track by person.name"> \
+          <div ng-bind-html="person.name | highlight: $select.search"></div> \
+          <div ng-bind-html="person.email | highlight: $select.search"></div> \
+        </ui-select-choices> \
+      </ui-select>'
+    );
+
+    expect(getMatchLabel(el)).toEqual('Samantha');
+  });
+
   it('should display the choices when activated', function() {
     var el = createUiSelect();
 
@@ -1080,6 +1096,26 @@ describe('ui-select tests', function() {
         expect(el.find('.ui-select-match-item').length).toBe(2);
     });
 
+    it('should render initial selected items with track by feature', function() {
+      scope.selection.selectedMultiple = [
+          { name: 'Samantha', email: 'something different than array source', group: 'foobar', age: 31 },
+          { name: 'Wladimir', email: 'something different than array source', group: 'FooBar', age: 31 },
+      ];
+
+      var el = compileTemplate(
+        '<ui-select multiple ng-model="selection.selectedMultiple"> \
+          <ui-select-match placeholder="Pick one...">{{$item.name}} &lt;{{$item.email}}&gt;</ui-select-match> \
+          <ui-select-choices repeat="person in people | filter: $select.search track by person.name"> \
+            <div ng-bind-html="person.name | highlight: $select.search"></div> \
+            <div ng-bind-html="person.email | highlight: $select.search"></div> \
+          </ui-select-choices> \
+        </ui-select>'
+      );
+
+      expect(el.scope().$select.selected.length).toBe(2);
+      expect(el.find('.ui-select-match-item').length).toBe(2);
+    });
+
     it('should remove item by pressing X icon', function() {
         scope.selection.selectedMultiple = [scope.people[4], scope.people[5]]; //Wladimir & Samantha
         var el = createUiSelectMultiple();
@@ -1347,13 +1383,6 @@ describe('ui-select tests', function() {
         triggerKeydown(searchInput, Key.Up)
         expect(el.scope().$select.activeIndex).toBe(3);
 
-    });
-
-    it('should render initial selected items', function() {
-        scope.selection.selectedMultiple = [scope.people[4], scope.people[5]]; //Wladimir & Samantha
-        var el = createUiSelectMultiple();
-        expect(el.scope().$select.selected.length).toBe(2);
-        expect(el.find('.ui-select-match-item').length).toBe(2);
     });
 
     it('should parse the items correctly using single property binding', function() {
