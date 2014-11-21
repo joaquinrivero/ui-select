@@ -1,7 +1,7 @@
 /*!
  * ui-select
  * http://github.com/angular-ui/ui-select
- * Version: 0.8.3 - 2014-10-14T18:22:05.432Z
+ * Version: 0.8.3 - 2014-11-21T02:15:47.683Z
  * License: MIT
  */
 
@@ -75,7 +75,8 @@
     theme: 'bootstrap',
     searchEnabled: true,
     placeholder: '', // Empty by default, like HTML tag <select>
-    refreshDelay: 1000 // In milliseconds
+    refreshDelay: 1000, // In milliseconds
+    closeOnSelect: true
   })
 
   // See Rename minErr and make it accessible from outside https://github.com/angular/angular.js/issues/6913
@@ -116,13 +117,22 @@
                 expression);
       }
 
-      return {
+      var result = {
         itemName: match[2], // (lhs) Left-hand side,
         source: $parse(match[3]),
         trackByExp: match[4],
         modelMapper: $parse(match[1] || match[2])
       };
 
+      if (result.trackByExp) {
+        var propMatch = result.trackByExp.match(/\S+\.(\S+)/);
+
+        if (propMatch) {
+          result.trackByProp = propMatch[1];
+        }
+      }
+
+      return result;
     };
 
     self.getGroupNgRepeatExpression = function() {
@@ -145,8 +155,8 @@
    * put as much logic in the controller (instead of the link functions) as possible so it can be easily tested.
    */
   .controller('uiSelectCtrl',
-    ['$scope', '$element', '$timeout', 'RepeatParser', 'uiSelectMinErr',
-    function($scope, $element, $timeout, RepeatParser, uiSelectMinErr) {
+    ['$scope', '$element', '$timeout', 'RepeatParser', 'uiSelectMinErr', 'uiSelectConfig',
+    function($scope, $element, $timeout, RepeatParser, uiSelectMinErr, uiSelectConfig) {
 
     var ctrl = this;
 
@@ -167,6 +177,9 @@
     ctrl.refreshDelay = undefined; // Initialized inside uiSelectChoices directive link function
     ctrl.multiple = false; // Initialized inside uiSelect directive link function
     ctrl.disableChoiceExpression = undefined; // Initialized inside uiSelect directive link function
+    ctrl.lockChoiceExpression = undefined; // Initialized inside uiSelect directive link function
+    ctrl.closeOnSelect = true; // Initialized inside uiSelect directive link function
+    ctrl.clickTriggeredSelect = false;
 
     ctrl.isEmpty = function() {
       return angular.isUndefined(ctrl.selected) || ctrl.selected === null || ctrl.selected === '';
@@ -179,7 +192,7 @@
 
     // Most of the time the user does not want to empty the search input when in typeahead mode
     function _resetSearchInput() {
-      if (ctrl.resetSearchInput) {
+      if (ctrl.resetSearchInput || (ctrl.resetSearchInput === undefined && uiSelectConfig.resetSearchInput)) {
         ctrl.search = EMPTY_SEARCH;
         //reset activeIndex
         if (ctrl.selected && ctrl.items.length && !ctrl.multiple) {
@@ -312,7 +325,13 @@
     };
 
     ctrl.isActive = function(itemScope) {
-      return ctrl.open && ctrl.items.indexOf(itemScope[ctrl.itemProperty]) === ctrl.activeIndex;
+      var isActive = ctrl.open && ctrl.items.indexOf(itemScope[ctrl.itemProperty]) === ctrl.activeIndex;
+
+      if (isActive && !angular.isUndefined(ctrl.onHighlightCallback)) {
+        itemScope.$eval(ctrl.onHighlightCallback);
+      }
+
+      return isActive;
     };
 
     ctrl.isDisabled = function(itemScope) {
@@ -333,8 +352,7 @@
     };
 
     // When the user clicks on an item inside the dropdown
-    ctrl.select = function(item, skipFocusser) {
-
+    ctrl.select = function(item, skipFocusser, $event) {
       if (item === undefined || !item._uiSelectChoiceDisabled) {
         var locals = {};
         locals[ctrl.parserResult.itemName] = item;
@@ -344,13 +362,18 @@
             $model: ctrl.parserResult.modelMapper($scope, locals)
         });
 
-        if(ctrl.multiple){
+        if(ctrl.multiple) {
           ctrl.selected.push(item);
           ctrl.sizeSearchInput();
         } else {
           ctrl.selected = item;
         }
-        ctrl.close(skipFocusser);
+        if (!ctrl.multiple || ctrl.closeOnSelect) {
+          ctrl.close(skipFocusser);
+        }
+        if ($event && $event.type === 'click') {
+          ctrl.clickTriggeredSelect = true;
+        }
       }
     };
 
@@ -374,9 +397,24 @@
       e.stopPropagation();
     };
 
+    ctrl.isLocked = function(itemScope, itemIndex) {
+        var isLocked, item = ctrl.selected[itemIndex];
+
+        if (item && !angular.isUndefined(ctrl.lockChoiceExpression)) {
+            isLocked = !!(itemScope.$eval(ctrl.lockChoiceExpression)); // force the boolean value
+            item._uiSelectChoiceLocked = isLocked; // store this for later reference
+        }
+
+        return isLocked;
+    };
+
     // Remove item from multiple select
     ctrl.removeChoice = function(index){
       var removedChoice = ctrl.selected[index];
+
+      // if the choice is locked, can't remove it
+      if(removedChoice._uiSelectChoiceLocked) return;
+
       var locals = {};
       locals[ctrl.parserResult.itemName] = removedChoice;
 
@@ -610,9 +648,18 @@
         var searchInput = element.querySelectorAll('input.ui-select-search');
 
         $select.multiple = (angular.isDefined(attrs.multiple)) ? (attrs.multiple === '') ? true : (attrs.multiple.toLowerCase() === 'true') : false;
-
+        $select.closeOnSelect = (angular.isDefined(attrs.closeOnSelect) && attrs.closeOnSelect.toLowerCase() === 'false') ? false : uiSelectConfig.closeOnSelect;
         $select.onSelectCallback = $parse(attrs.onSelect);
         $select.onRemoveCallback = $parse(attrs.onRemove);
+
+        // When configured for multiple, override $isEmpty so that ng-required works as expected.
+        if ($select.multiple) {
+          var defaultIsEmptyFn = ngModel.$isEmpty;
+
+          ngModel.$isEmpty = function(value) {
+            return (angular.isArray(value) && value.length === 0) || defaultIsEmptyFn(value);
+          };
+        }
 
         //From view --> model
         ngModel.$parsers.unshift(function (inputValue) {
@@ -636,49 +683,93 @@
         });
 
         //From model --> view
-        ngModel.$formatters.unshift(function (inputValue) {
-          var data = $select.parserResult.source (scope, { $select : {search:''}}), //Overwrite $search 
-              locals = {},
-              result;
-          if (data){
-            if ($select.multiple){
-              var resultMultiple = [];
-              var checkFnMultiple = function(list, value){
-                if (!list || !list.length) return;
-                for (var p = list.length - 1; p >= 0; p--) {
-                  locals[$select.parserResult.itemName] = list[p];
-                  result = $select.parserResult.modelMapper(scope, locals);
-                  if (result == value){
-                    resultMultiple.unshift(list[p]);
-                    return true;
-                  }
-                }
-                return false;
-              };
-              if (!inputValue) return resultMultiple; //If ngModel was undefined
-              for (var k = inputValue.length - 1; k >= 0; k--) {
-                if (!checkFnMultiple($select.selected, inputValue[k])){
-                  checkFnMultiple(data, inputValue[k]);
-                }
-              }
-              return resultMultiple;
-            }else{
-              var checkFnSingle = function(d){
-                locals[$select.parserResult.itemName] = d;
+        ngModel.$formatters.unshift(function() {
+          var matchesOptionMultiple = function(options, inputValue, resultMultiple) {
+            var locals, result;
+            var match = false;
+
+            if (options && options.length) {
+              for (var i = options.length - 1; i >= 0 && !match; i--) {
+                locals = {};
+                locals[$select.parserResult.itemName] = options[i];
                 result = $select.parserResult.modelMapper(scope, locals);
-                return result == inputValue;
-              };
-              //If possible pass same object stored in $select.selected
-              if ($select.selected && checkFnSingle($select.selected)) {
-                return $select.selected;
-              }
-              for (var i = data.length - 1; i >= 0; i--) {
-                if (checkFnSingle(data[i])) return data[i];
+
+                if ($select.parserResult.trackByProp && inputValue) {
+                  match = angular.equals(result[$select.parserResult.trackByProp], inputValue[$select.parserResult.trackByProp]);
+                } else {
+                  match = angular.equals(result, inputValue);
+                }
+
+                if (match) {
+                  resultMultiple.unshift(options[i]);
+                }
               }
             }
-          }
-          return inputValue;
-        });
+
+            return match;
+          };
+
+          var matchesOption = function(option, inputValue) {
+            var result, locals = {};
+            locals[$select.parserResult.itemName] = option;
+            result = $select.parserResult.modelMapper(scope, locals);
+
+            if ($select.parserResult.trackByProp && inputValue) {
+              return angular.equals(result[$select.parserResult.trackByProp], inputValue[$select.parserResult.trackByProp]);
+            }
+
+            return angular.equals(result, inputValue);
+          };
+
+          var handleMultiple = function(data, inputValue) {
+            var resultMultiple = [];
+
+            if (inputValue) {
+              for (var k = inputValue.length - 1; k >= 0; k--) {
+                if (!matchesOptionMultiple($select.selected, inputValue[k], resultMultiple)) {
+                  matchesOptionMultiple(data, inputValue[k], resultMultiple);
+                }
+              }
+            }
+
+            return resultMultiple;
+          };
+
+          var handleSingle = function(data, inputValue) {
+            var result = inputValue;
+
+            if (inputValue) {
+              // If possible pass same object stored in $select.selected
+              if ($select.selected && matchesOption($select.selected, inputValue)) {
+                result = $select.selected;
+              } else {
+                for (var i = data.length - 1; i >= 0; i--) {
+                  if (matchesOption(data[i], inputValue)) {
+                    result = data[i];
+                    break;
+                  }
+                }
+              }
+            }
+
+            return result;
+          };
+
+          return function(inputValue) {
+            var data = $select.parserResult.source(scope, {$select: {search: ''}}); //Overwrite $search
+            var result = inputValue;
+
+            if (data) {
+              if ($select.multiple) {
+                result = handleMultiple(data, inputValue);
+              } else {
+                result = handleSingle(data, inputValue);
+              }
+            }
+
+            return result;
+          };
+        }());
 
         //Set reference to ngModel from uiSelectCtrl
         $select.ngModel = ngModel;
@@ -756,7 +847,7 @@
 
         scope.$watch('searchEnabled', function() {
             var searchEnabled = scope.$eval(attrs.searchEnabled);
-            $select.searchEnabled = searchEnabled !== undefined ? searchEnabled : true;
+            $select.searchEnabled = searchEnabled !== undefined ? searchEnabled : uiSelectConfig.searchEnabled;
         });
 
         attrs.$observe('disabled', function() {
@@ -813,10 +904,11 @@
             contains = element[0].contains(e.target);
           }
 
-          if (!contains) {
+          if (!contains && !$select.clickTriggeredSelect) {
             $select.close();
             scope.$digest();
           }
+          $select.clickTriggeredSelect = false;
         }
 
         // See Click everywhere but here event http://stackoverflow.com/questions/12931369
@@ -880,6 +972,7 @@
           $select.parseRepeatAttr(attrs.repeat, groupByExp); //Result ready at $select.parserResult
 
           $select.disableChoiceExpression = attrs.uiDisableChoice;
+          $select.onHighlightCallback = attrs.onHighlight;
 
           if(groupByExp) {
             var groups = element.querySelectorAll('.ui-select-choices-group');
@@ -893,8 +986,9 @@
           }
 
           choices.attr('ng-repeat', RepeatParser.getNgRepeatExpression($select.parserResult.itemName, '$select.items', $select.parserResult.trackByExp, groupByExp))
+              .attr('ng-if', '$select.open') //Prevent unnecessary watches when dropdown is closed
               .attr('ng-mouseenter', '$select.setActiveItem('+$select.parserResult.itemName +')')
-              .attr('ng-click', '$select.select(' + $select.parserResult.itemName + ')');
+              .attr('ng-click', '$select.select(' + $select.parserResult.itemName + ',false,$event)');
 
           var rowsInner = element.querySelectorAll('.ui-select-choices-row-inner');
           if (rowsInner.length !== 1) throw uiSelectMinErr('rows', "Expected 1 .ui-select-choices-row-inner but got '{0}'.", rowsInner.length);
@@ -940,6 +1034,7 @@
         return theme + (multi ? '/match-multiple.tpl.html' : '/match.tpl.html');
       },
       link: function(scope, element, attrs, $select) {
+        $select.lockChoiceExpression = attrs.uiLockChoice;
         attrs.$observe('placeholder', function(placeholder) {
           $select.placeholder = placeholder !== undefined ? placeholder : uiSelectConfig.placeholder;
         });
@@ -969,16 +1064,16 @@
   });
 }());
 
-angular.module("ui.select").run(["$templateCache", function($templateCache) {$templateCache.put("bootstrap/choices.tpl.html","<ul class=\"ui-select-choices ui-select-choices-content dropdown-menu\" role=\"menu\" aria-labelledby=\"dLabel\" ng-show=\"$select.items.length > 0\"><li class=\"ui-select-choices-group\"><div class=\"divider\" ng-show=\"$select.isGrouped && $index > 0\"></div><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label dropdown-header\">{{$group.name}}</div><div class=\"ui-select-choices-row\" ng-class=\"{active: $select.isActive(this), disabled: $select.isDisabled(this)}\"><a href=\"javascript:void(0)\" class=\"ui-select-choices-row-inner\"></a></div></li></ul>");
+angular.module("ui.select").run(["$templateCache", function($templateCache) {$templateCache.put("bootstrap/choices.tpl.html","<ul class=\"ui-select-choices ui-select-choices-content dropdown-menu\" role=\"menu\" aria-labelledby=\"dLabel\" ng-show=\"$select.items.length > 0\"><li class=\"ui-select-choices-group\"><div class=\"divider\" ng-show=\"$select.isGrouped && $index > 0\"></div><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label dropdown-header\" ng-bind-html=\"$group.name\"></div><div class=\"ui-select-choices-row\" ng-class=\"{active: $select.isActive(this), disabled: $select.isDisabled(this)}\"><a href=\"javascript:void(0)\" class=\"ui-select-choices-row-inner\"></a></div></li></ul>");
 $templateCache.put("bootstrap/match-multiple.tpl.html","<span class=\"ui-select-match\"><span ng-repeat=\"$item in $select.selected\"><span style=\"margin-right: 3px;\" class=\"ui-select-match-item btn btn-default btn-xs\" tabindex=\"-1\" type=\"button\" ng-disabled=\"$select.disabled\" ng-click=\"$select.activeMatchIndex = $index;\" ng-class=\"{\'btn-primary\':$select.activeMatchIndex === $index}\"><span class=\"close ui-select-match-close\" ng-hide=\"$select.disabled\" ng-click=\"$select.removeChoice($index)\">&nbsp;&times;</span> <span uis-transclude-append=\"\"></span></span></span></span>");
-$templateCache.put("bootstrap/match.tpl.html","<button type=\"button\" class=\"btn btn-default form-control ui-select-match\" tabindex=\"-1\" ng-hide=\"$select.open\" ng-disabled=\"$select.disabled\" ng-class=\"{\'btn-default-focus\':$select.focus}\" ;=\"\" ng-click=\"$select.activate()\"><span ng-show=\"$select.searchEnabled && $select.isEmpty()\" class=\"text-muted\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" ng-transclude=\"\"></span> <span class=\"caret ui-select-toggle\" ng-click=\"$select.toggle($event)\"></span></button>");
+$templateCache.put("bootstrap/match.tpl.html","<button type=\"button\" class=\"btn btn-default form-control ui-select-match\" tabindex=\"-1\" ng-hide=\"$select.open\" ng-disabled=\"$select.disabled\" ng-class=\"{\'btn-default-focus\':$select.focus}\" ;=\"\" ng-click=\"$select.activate()\"><span ng-show=\"$select.isEmpty()\" class=\"text-muted\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" ng-transclude=\"\"></span> <span class=\"caret ui-select-toggle\" ng-click=\"$select.toggle($event)\"></span></button>");
 $templateCache.put("bootstrap/select-multiple.tpl.html","<div class=\"ui-select-multiple ui-select-bootstrap dropdown form-control\" ng-class=\"{open: $select.open}\"><div><div class=\"ui-select-match\"></div><input type=\"text\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" class=\"ui-select-search input-xs\" placeholder=\"{{$select.getPlaceholder()}}\" ng-disabled=\"$select.disabled\" ng-hide=\"$select.disabled\" ng-click=\"$select.activate()\" ng-model=\"$select.search\"></div><div class=\"ui-select-choices\"></div></div>");
 $templateCache.put("bootstrap/select.tpl.html","<div class=\"ui-select-bootstrap dropdown\" ng-class=\"{open: $select.open}\"><div class=\"ui-select-match\"></div><input type=\"text\" autocomplete=\"off\" tabindex=\"-1\" class=\"form-control ui-select-search\" placeholder=\"{{$select.placeholder}}\" ng-model=\"$select.search\" ng-show=\"$select.searchEnabled && $select.open\"><div class=\"ui-select-choices\"></div></div>");
-$templateCache.put("select2/choices.tpl.html","<ul class=\"ui-select-choices ui-select-choices-content select2-results\"><li class=\"ui-select-choices-group\" ng-class=\"{\'select2-result-with-children\': $select.isGrouped}\"><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label select2-result-label\">{{$group.name}}</div><ul ng-class=\"{\'select2-result-sub\': $select.isGrouped, \'select2-result-single\': !$select.isGrouped}\"><li class=\"ui-select-choices-row\" ng-class=\"{\'select2-highlighted\': $select.isActive(this), \'select2-disabled\': $select.isDisabled(this)}\"><div class=\"select2-result-label ui-select-choices-row-inner\"></div></li></ul></li></ul>");
-$templateCache.put("select2/match-multiple.tpl.html","<span class=\"ui-select-match\"><li class=\"ui-select-match-item select2-search-choice\" ng-repeat=\"$item in $select.selected\" ng-class=\"{\'select2-search-choice-focus\':$select.activeMatchIndex === $index}\"><span uis-transclude-append=\"\"></span> <a href=\"javascript:;\" class=\"ui-select-match-close select2-search-choice-close\" ng-click=\"$select.removeChoice($index)\" tabindex=\"-1\"></a></li></span>");
-$templateCache.put("select2/match.tpl.html","<a class=\"select2-choice ui-select-match\" ng-class=\"{\'select2-default\': $select.isEmpty()}\" ng-click=\"$select.activate()\"><span ng-show=\"$select.searchEnabled && $select.isEmpty()\" class=\"select2-chosen\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" class=\"select2-chosen\" ng-transclude=\"\"></span> <span class=\"select2-arrow ui-select-toggle\" ng-click=\"$select.toggle($event)\"><b></b></span></a>");
+$templateCache.put("select2/choices.tpl.html","<ul class=\"ui-select-choices ui-select-choices-content select2-results\"><li class=\"ui-select-choices-group\" ng-class=\"{\'select2-result-with-children\': $select.isGrouped}\"><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label select2-result-label\" ng-bind-html=\"$group.name\"></div><ul ng-class=\"{\'select2-result-sub\': $select.isGrouped, \'select2-result-single\': !$select.isGrouped}\"><li class=\"ui-select-choices-row\" ng-class=\"{\'select2-highlighted\': $select.isActive(this), \'select2-disabled\': $select.isDisabled(this)}\"><div class=\"select2-result-label ui-select-choices-row-inner\"></div></li></ul></li></ul>");
+$templateCache.put("select2/match-multiple.tpl.html","<span class=\"ui-select-match\"><li class=\"ui-select-match-item select2-search-choice\" ng-repeat=\"$item in $select.selected\" ng-class=\"{\'select2-search-choice-focus\':$select.activeMatchIndex === $index, \'select2-locked\':$select.isLocked(this, $index)}\"><span uis-transclude-append=\"\"></span> <a href=\"javascript:;\" class=\"ui-select-match-close select2-search-choice-close\" ng-click=\"$select.removeChoice($index)\" tabindex=\"-1\"></a></li></span>");
+$templateCache.put("select2/match.tpl.html","<a class=\"select2-choice ui-select-match\" ng-class=\"{\'select2-default\': $select.isEmpty()}\" ng-click=\"$select.activate()\"><span ng-show=\"$select.isEmpty()\" class=\"select2-chosen\">{{$select.placeholder}}</span> <span ng-hide=\"$select.isEmpty()\" class=\"select2-chosen\" ng-transclude=\"\"></span> <span class=\"select2-arrow ui-select-toggle\" ng-click=\"$select.toggle($event)\"><b></b></span></a>");
 $templateCache.put("select2/select-multiple.tpl.html","<div class=\"ui-select-multiple select2 select2-container select2-container-multi\" ng-class=\"{\'select2-container-active select2-dropdown-open\': $select.open,\n                \'select2-container-disabled\': $select.disabled}\"><ul class=\"select2-choices\"><span class=\"ui-select-match\"></span><li class=\"select2-search-field\"><input type=\"text\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" class=\"select2-input ui-select-search\" placeholder=\"{{$select.getPlaceholder()}}\" ng-disabled=\"$select.disabled\" ng-hide=\"$select.disabled\" ng-model=\"$select.search\" ng-click=\"$select.activate()\" style=\"width: 34px;\"></li></ul><div class=\"select2-drop select2-with-searchbox select2-drop-active\" ng-class=\"{\'select2-display-none\': !$select.open}\"><div class=\"ui-select-choices\"></div></div></div>");
 $templateCache.put("select2/select.tpl.html","<div class=\"select2 select2-container\" ng-class=\"{\'select2-container-active select2-dropdown-open\': $select.open,\n                \'select2-container-disabled\': $select.disabled,\n                \'select2-container-active\': $select.focus }\"><div class=\"ui-select-match\"></div><div class=\"select2-drop select2-with-searchbox select2-drop-active\" ng-class=\"{\'select2-display-none\': !$select.open}\"><div class=\"select2-search\" ng-show=\"$select.searchEnabled\"><input type=\"text\" autocomplete=\"off\" autocorrect=\"off\" autocapitalize=\"off\" spellcheck=\"false\" class=\"ui-select-search select2-input\" ng-model=\"$select.search\"></div><div class=\"ui-select-choices\"></div></div></div>");
-$templateCache.put("selectize/choices.tpl.html","<div ng-show=\"$select.open\" class=\"ui-select-choices selectize-dropdown single\"><div class=\"ui-select-choices-content selectize-dropdown-content\"><div class=\"ui-select-choices-group optgroup\"><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label optgroup-header\">{{$group.name}}</div><div class=\"ui-select-choices-row\" ng-class=\"{active: $select.isActive(this), disabled: $select.isDisabled(this)}\"><div class=\"option ui-select-choices-row-inner\" data-selectable=\"\"></div></div></div></div></div>");
-$templateCache.put("selectize/match.tpl.html","<div ng-hide=\"$select.searchEnabled && ($select.open || $select.isEmpty())\" class=\"ui-select-match\" ng-transclude=\"\"></div>");
+$templateCache.put("selectize/choices.tpl.html","<div ng-show=\"$select.open\" class=\"ui-select-choices selectize-dropdown single\"><div class=\"ui-select-choices-content selectize-dropdown-content\"><div class=\"ui-select-choices-group optgroup\"><div ng-show=\"$select.isGrouped\" class=\"ui-select-choices-group-label optgroup-header\" ng-bind-html=\"$group.name\"></div><div class=\"ui-select-choices-row\" ng-class=\"{active: $select.isActive(this), disabled: $select.isDisabled(this)}\"><div class=\"option ui-select-choices-row-inner\" data-selectable=\"\"></div></div></div></div></div>");
+$templateCache.put("selectize/match.tpl.html","<div ng-hide=\"($select.open || $select.isEmpty())\" class=\"ui-select-match\" ng-transclude=\"\"></div>");
 $templateCache.put("selectize/select.tpl.html","<div class=\"selectize-control single\"><div class=\"selectize-input\" ng-class=\"{\'focus\': $select.open, \'disabled\': $select.disabled, \'selectize-focus\' : $select.focus}\" ng-click=\"$select.activate()\"><div class=\"ui-select-match\"></div><input type=\"text\" autocomplete=\"off\" tabindex=\"-1\" class=\"ui-select-search ui-select-toggle\" ng-click=\"$select.toggle($event)\" placeholder=\"{{$select.placeholder}}\" ng-model=\"$select.search\" ng-hide=\"!$select.searchEnabled || ($select.selected && !$select.open)\" ng-disabled=\"$select.disabled\"></div><div class=\"ui-select-choices\"></div></div>");}]);
